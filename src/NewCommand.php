@@ -87,6 +87,7 @@ class NewCommand extends Command
   |______\__,_|_|  \__,_| \_/ \___|_|</>'.PHP_EOL.PHP_EOL);
 
         $this->ensureExtensionsAreAvailable($input, $output);
+        $this->validateDevAndTargetOptions($input);
 
         if (! $input->getArgument('name')) {
             $input->setArgument('name', text(
