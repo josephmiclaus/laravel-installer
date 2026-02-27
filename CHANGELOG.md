@@ -1,6 +1,128 @@
 # Release Notes
 
-## [Unreleased](https://github.com/laravel/installer/compare/v5.11.1...master)
+## [Unreleased](https://github.com/laravel/installer/compare/v5.24.7...master)
+
+## [v5.24.7](https://github.com/laravel/installer/compare/v5.24.6...v5.24.7) - 2026-02-24
+
+* Laravel 13.x Compatibility by [@laravel-shift](https://github.com/laravel-shift) in https://github.com/laravel/installer/pull/467
+
+## [v5.24.6](https://github.com/laravel/installer/compare/v5.24.5...v5.24.6) - 2026-02-17
+
+* Add support for Svelte Starter Kit by [@WendellAdriel](https://github.com/WendellAdriel) in https://github.com/laravel/installer/pull/466
+
+## [v5.24.5](https://github.com/laravel/installer/compare/v5.24.4...v5.24.5) - 2026-02-11
+
+**Full Changelog**: https://github.com/laravel/installer/compare/v5.24.4...v5.24.5
+
+## [v5.24.4](https://github.com/laravel/installer/compare/v5.24.3...v5.24.4) - 2026-02-04
+
+**Full Changelog**: https://github.com/laravel/installer/compare/v5.24.3...v5.24.4
+
+## [v5.24.3](https://github.com/laravel/installer/compare/v5.24.2...v5.24.3) - 2026-01-23
+
+* Update ASCII art banner by [@cjmellor](https://github.com/cjmellor) in https://github.com/laravel/installer/pull/463
+* Add gradient color display for Laravel header by [@pushpak1300](https://github.com/pushpak1300) in https://github.com/laravel/installer/pull/464
+
+## [v5.24.2](https://github.com/laravel/installer/compare/v5.24.1...v5.24.2) - 2026-01-20
+
+* Fix current release version by [@xHeaven](https://github.com/xHeaven) in https://github.com/laravel/installer/pull/461
+
+### New Contributors
+
+* [@xHeaven](https://github.com/xHeaven) made their first contribution in https://github.com/laravel/installer/pull/461
+
+## [v5.24.1](https://github.com/laravel/installer/compare/v5.24.0...v5.24.1) - 2026-01-19
+
+* Single File Components by [@inmanturbo](https://github.com/inmanturbo) in https://github.com/laravel/installer/pull/459
+* Change add method with addCommand. Because add is deprecated in symfony/console by [@mt-shihab26](https://github.com/mt-shihab26) in https://github.com/laravel/installer/pull/460
+* Fix Herd/Valet detection based on stored paths by [@mpociot](https://github.com/mpociot) in https://github.com/laravel/installer/pull/458
+
+## [v5.24.0](https://github.com/laravel/installer/compare/v5.23.2...v5.24.0) - 2026-01-07
+
+**Full Changelog**: https://github.com/laravel/installer/compare/v5.23.2...v5.24.0
+
+## [v5.23.2](https://github.com/laravel/installer/compare/v5.23.1...v5.23.2) - 2025-12-09
+
+* Remove usage of deprecated `curl_close()` function by [@crynobone](https://github.com/crynobone) in https://github.com/laravel/installer/pull/452
+
+## [v5.23.1](https://github.com/laravel/installer/compare/v5.23.0...v5.23.1) - 2025-11-25
+
+* [5.x] PHP 8.5 Compatibility by [@crynobone](https://github.com/crynobone) in https://github.com/laravel/installer/pull/449
+
+## [v5.23.0](https://github.com/laravel/installer/compare/v5.22.0...v5.23.0) - 2025-10-28
+
+* Add Laravel Boost Installation Option by [@pushpak1300](https://github.com/pushpak1300) in https://github.com/laravel/installer/pull/446
+
+## [v5.22.0](https://github.com/laravel/installer/compare/v5.21.0...v5.22.0) - 2025-10-21
+
+* Use `bunx` as `npx` equivalent by [@joetannenbaum](https://github.com/joetannenbaum) in https://github.com/laravel/installer/pull/443
+* Symfony namespace spelling issue by [@Mdsujansarkar](https://github.com/Mdsujansarkar) in https://github.com/laravel/installer/pull/445
+
+## [v5.21.0](https://github.com/laravel/installer/compare/v5.20.0...v5.21.0) - 2025-10-14
+
+* Pass flags for alternative Node package managers by [@joetannenbaum](https://github.com/joetannenbaum) in https://github.com/laravel/installer/pull/442
+
+## [v5.20.0](https://github.com/laravel/installer/compare/v5.19.0...v5.20.0) - 2025-10-07
+
+* feat: bun package install/build by [@ludo237](https://github.com/ludo237) in https://github.com/laravel/installer/pull/439
+
+## [v5.19.0](https://github.com/laravel/installer/compare/v5.18.0...v5.19.0) - 2025-09-30
+
+* Check for new version of installer on `new` by [@joetannenbaum](https://github.com/joetannenbaum) in https://github.com/laravel/installer/pull/438
+
+## [v5.18.0](https://github.com/laravel/installer/compare/v5.17.0...v5.18.0) - 2025-09-23
+
+* Support pnpm and yarn package managers by [@adrum](https://github.com/adrum) in https://github.com/laravel/installer/pull/433
+* Add the ability to use a git repo as custom kit by [@adrum](https://github.com/adrum) in https://github.com/laravel/installer/pull/432
+* Don't pass --no-ansi to rm, properly check if output is a TTY by [@stancl](https://github.com/stancl) in https://github.com/laravel/installer/pull/437
+
+## [v5.17.0](https://github.com/laravel/installer/compare/v5.16.0...v5.17.0) - 2025-08-07
+
+* List possible values for database driver by [@dmarcoux](https://github.com/dmarcoux) in https://github.com/laravel/installer/pull/426
+
+## [v5.16.0](https://github.com/laravel/installer/compare/v5.15.0...v5.16.0) - 2025-06-17
+
+* fix: Starter kits should not ignore the `--database` option by [@mathiasgrimm](https://github.com/mathiasgrimm) in https://github.com/laravel/installer/pull/422
+
+## [v5.15.0](https://github.com/laravel/installer/compare/v5.14.2...v5.15.0) - 2025-05-20
+
+* add missing variable name to doc tags and missing doc tags to methods by [@Muetze42](https://github.com/Muetze42) in https://github.com/laravel/installer/pull/420
+
+## [v5.14.2](https://github.com/laravel/installer/compare/v5.14.1...v5.14.2) - 2025-04-01
+
+* [5.x] Only open files in the tests directory when converting to Pest by [@tonysm](https://github.com/tonysm) in https://github.com/laravel/installer/pull/414
+
+## [v5.14.1](https://github.com/laravel/installer/compare/v5.14.0...v5.14.1) - 2025-03-18
+
+* Adding Pest option back in Laravel app and improve pest experience by [@tnylea](https://github.com/tnylea) in https://github.com/laravel/installer/pull/413
+
+## [v5.14.0](https://github.com/laravel/installer/compare/v5.13.0...v5.14.0) - 2025-03-07
+
+* [12.x] Adds an option to install a custom starter kits by [@tonysm](https://github.com/tonysm) in https://github.com/laravel/installer/pull/407
+
+## [v5.13.0](https://github.com/laravel/installer/compare/v5.12.2...v5.13.0) - 2025-02-28
+
+* Add support for non-Volt Livewire starter kit
+* Add npm option to fix no-interaction installs by [@mpociot](https://github.com/mpociot) in https://github.com/laravel/installer/pull/402
+
+## [v5.12.2](https://github.com/laravel/installer/compare/v5.12.1...v5.12.2) - 2025-02-25
+
+* Remove drift plugin after running drift command by [@laserhybiz](https://github.com/laserhybiz) in https://github.com/laravel/installer/pull/393
+* Fix Pest installation by [@crynobone](https://github.com/crynobone) in https://github.com/laravel/installer/pull/397
+* Use PHPStan 2 by [@crynobone](https://github.com/crynobone) in https://github.com/laravel/installer/pull/396
+* Use pest command in github workflow when using pest by [@laserhybiz](https://github.com/laserhybiz) in https://github.com/laravel/installer/pull/401
+
+## [v5.12.1](https://github.com/laravel/installer/compare/v5.12.0...v5.12.1) - 2025-02-24
+
+## [v5.12.0](https://github.com/laravel/installer/compare/v5.11.2...v5.12.0) - 2025-02-24
+
+* Laravel 12.x Compatibility by [@laravel-shift](https://github.com/laravel-shift) in https://github.com/laravel/installer/pull/389
+* Laravel 12 + New Starter Kits by [@taylorotwell](https://github.com/taylorotwell) in https://github.com/laravel/installer/pull/390
+
+## [v5.11.2](https://github.com/laravel/installer/compare/v5.11.1...v5.11.2) - 2025-01-14
+
+* Update version to 5.11.1 by [@miclaus](https://github.com/miclaus) in https://github.com/laravel/installer/pull/381
+* Fix Laravel installer on Windows WSL by [@JasonTame](https://github.com/JasonTame) in https://github.com/laravel/installer/pull/385
 
 ## [v5.11.1](https://github.com/laravel/installer/compare/v5.11.0...v5.11.1) - 2024-12-11
 

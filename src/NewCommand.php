@@ -5,17 +5,23 @@ namespace Laravel\Installer\Console;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Composer;
 use Illuminate\Support\ProcessUtils;
+use Illuminate\Support\Str;
+use Laravel\Installer\Console\Enums\NodePackageManager;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
+use Throwable;
 
+use function Illuminate\Filesystem\join_paths;
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\multiselect;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
@@ -23,6 +29,8 @@ class NewCommand extends Command
 {
     use Concerns\ConfiguresPrompts;
     use Concerns\InteractsWithHerdOrValet;
+
+    const DATABASE_DRIVERS = ['mysql', 'mariadb', 'pgsql', 'sqlite', 'sqlsrv'];
 
     /**
      * The Composer instance.
@@ -42,27 +50,28 @@ class NewCommand extends Command
             ->setName('new')
             ->setDescription('Create a new Laravel application')
             ->addArgument('name', InputArgument::REQUIRED)
-            ->addOption('dev', null, InputOption::VALUE_NONE, 'Installs the latest "development" release. Cannot be used with --target')
-            ->addOption('target', null, InputOption::VALUE_OPTIONAL, 'Installs the specified version of Laravel. Cannot be used with --dev')
+            ->addOption('dev', null, InputOption::VALUE_NONE, 'Install the latest "development" release. Cannot be used with --target')
+            ->addOption('target', null, InputOption::VALUE_OPTIONAL, 'Install the specified version of Laravel. Cannot be used with --dev')
             ->addOption('git', null, InputOption::VALUE_NONE, 'Initialize a Git repository')
             ->addOption('branch', null, InputOption::VALUE_REQUIRED, 'The branch that should be created for a new repository', $this->defaultBranch())
             ->addOption('github', null, InputOption::VALUE_OPTIONAL, 'Create a new repository on GitHub', false)
             ->addOption('organization', null, InputOption::VALUE_REQUIRED, 'The GitHub organization to create the new repository for')
-            ->addOption('database', null, InputOption::VALUE_REQUIRED, 'The database driver your application will use')
-            ->addOption('stack', null, InputOption::VALUE_OPTIONAL, 'The Breeze / Jetstream stack that should be installed')
-            ->addOption('breeze', null, InputOption::VALUE_NONE, 'Installs the Laravel Breeze scaffolding')
-            ->addOption('jet', null, InputOption::VALUE_NONE, 'Installs the Laravel Jetstream scaffolding')
-            ->addOption('dark', null, InputOption::VALUE_NONE, 'Indicate whether Breeze or Jetstream should be scaffolded with dark mode support')
-            ->addOption('typescript', null, InputOption::VALUE_NONE, 'Indicate whether Breeze should be scaffolded with TypeScript support')
-            ->addOption('eslint', null, InputOption::VALUE_NONE, 'Indicate whether Breeze should be scaffolded with ESLint and Prettier support')
-            ->addOption('ssr', null, InputOption::VALUE_NONE, 'Indicate whether Breeze or Jetstream should be scaffolded with Inertia SSR support')
-            ->addOption('api', null, InputOption::VALUE_NONE, 'Indicates whether Jetstream should be scaffolded with API support')
-            ->addOption('teams', null, InputOption::VALUE_NONE, 'Indicates whether Jetstream should be scaffolded with team support')
-            ->addOption('verification', null, InputOption::VALUE_NONE, 'Indicates whether Jetstream should be scaffolded with email verification support')
-            ->addOption('pest', null, InputOption::VALUE_NONE, 'Installs the Pest testing framework')
-            ->addOption('phpunit', null, InputOption::VALUE_NONE, 'Installs the PHPUnit testing framework')
-            ->addOption('prompt-breeze', null, InputOption::VALUE_NONE, 'Issues a prompt to determine if Breeze should be installed (Deprecated)')
-            ->addOption('prompt-jetstream', null, InputOption::VALUE_NONE, 'Issues a prompt to determine if Jetstream should be installed (Deprecated)')
+            ->addOption('database', null, InputOption::VALUE_REQUIRED, 'The database driver your application will use. Possible values are: '.implode(', ', self::DATABASE_DRIVERS))
+            ->addOption('react', null, InputOption::VALUE_NONE, 'Install the React Starter Kit')
+            ->addOption('svelte', null, InputOption::VALUE_NONE, 'Install the Svelte Starter Kit')
+            ->addOption('vue', null, InputOption::VALUE_NONE, 'Install the Vue Starter Kit')
+            ->addOption('livewire', null, InputOption::VALUE_NONE, 'Install the Livewire Starter Kit')
+            ->addOption('livewire-class-components', null, InputOption::VALUE_NONE, 'Generate stand-alone Livewire class components')
+            ->addOption('workos', null, InputOption::VALUE_NONE, 'Use WorkOS for authentication')
+            ->addOption('no-authentication', null, InputOption::VALUE_NONE, 'Do not generate authentication scaffolding')
+            ->addOption('pest', null, InputOption::VALUE_NONE, 'Install the Pest testing framework')
+            ->addOption('phpunit', null, InputOption::VALUE_NONE, 'Install the PHPUnit testing framework')
+            ->addOption('npm', null, InputOption::VALUE_NONE, 'Install and build NPM dependencies')
+            ->addOption('pnpm', null, InputOption::VALUE_NONE, 'Install and build NPM dependencies via PNPM')
+            ->addOption('bun', null, InputOption::VALUE_NONE, 'Install and build NPM dependencies via Bun')
+            ->addOption('yarn', null, InputOption::VALUE_NONE, 'Install and build NPM dependencies via Yarn')
+            ->addOption('boost', null, InputOption::VALUE_NONE, 'Install Laravel Boost to improve AI assisted coding')
+            ->addOption('using', null, InputOption::VALUE_OPTIONAL, 'Install a custom starter kit from a community maintained package')
             ->addOption('force', 'f', InputOption::VALUE_NONE, 'Forces install even if the directory already exists');
     }
 
@@ -79,15 +88,12 @@ class NewCommand extends Command
 
         $this->configurePrompts($input, $output);
 
-        $output->write(PHP_EOL.'  <fg=red> _                               _
-  | |                             | |
-  | |     __ _ _ __ __ ___   _____| |
-  | |    / _` | \'__/ _` \ \ / / _ \ |
-  | |___| (_| | | | (_| |\ V /  __/ |
-  |______\__,_|_|  \__,_| \_/ \___|_|</>'.PHP_EOL.PHP_EOL);
+        $this->displayHeader($output);
 
         $this->ensureExtensionsAreAvailable($input, $output);
         $this->validateDevAndTargetOptions($input);
+
+        $this->checkForUpdate($input, $output);
 
         if (! $input->getArgument('name')) {
             $input->setArgument('name', text(
@@ -116,26 +122,50 @@ class NewCommand extends Command
             );
         }
 
-        if (! $input->getOption('breeze') && ! $input->getOption('jet')) {
+        if (! $this->usingStarterKit($input)) {
             match (select(
-                label: 'Would you like to install a starter kit?',
+                label: 'Which starter kit would you like to install?',
                 options: [
-                    'none' => 'No starter kit',
-                    'breeze' => 'Laravel Breeze',
-                    'jetstream' => 'Laravel Jetstream',
+                    'none' => 'None',
+                    'react' => 'React',
+                    'svelte' => 'Svelte',
+                    'vue' => 'Vue',
+                    'livewire' => 'Livewire',
                 ],
                 default: 'none',
             )) {
-                'breeze' => $input->setOption('breeze', true),
-                'jetstream' => $input->setOption('jet', true),
+                'react' => $input->setOption('react', true),
+                'svelte' => $input->setOption('svelte', true),
+                'vue' => $input->setOption('vue', true),
+                'livewire' => $input->setOption('livewire', true),
                 default => null,
             };
-        }
 
-        if ($input->getOption('breeze')) {
-            $this->promptForBreezeOptions($input);
-        } elseif ($input->getOption('jet')) {
-            $this->promptForJetstreamOptions($input);
+            if ($this->usingLaravelStarterKit($input)) {
+                match (select(
+                    label: 'Which authentication provider do you prefer?',
+                    options: [
+                        'laravel' => "Laravel's built-in authentication",
+                        'workos' => 'WorkOS (Requires WorkOS account)',
+                        'none' => 'No authentication scaffolding',
+                    ],
+                    default: 'laravel',
+                )) {
+                    'laravel' => $input->setOption('workos', false),
+                    'workos' => $input->setOption('workos', true),
+                    'none' => $input->setOption('no-authentication', true),
+                    default => null,
+                };
+            }
+
+            if ($input->getOption('livewire') &&
+                ! $input->getOption('workos') &&
+                ! $input->getOption('no-authentication')) {
+                $input->setOption('livewire-class-components', ! confirm(
+                    label: 'Would you like to use single-file Livewire components?',
+                    default: true,
+                ));
+            }
         }
 
         if (! $input->getOption('phpunit') && ! $input->getOption('pest')) {
@@ -146,9 +176,50 @@ class NewCommand extends Command
             ) === 'Pest');
         }
 
-        // if (! $input->getOption('git') && $input->getOption('github') === false && Process::fromShellCommandline('git --version')->run() === 0) {
-        //     $input->setOption('git', confirm(label: 'Would you like to initialize a Git repository?', default: false));
-        // }
+        if (! $input->getOption('boost')) {
+            $input->setOption('boost', confirm(
+                label: 'Do you want to install Laravel Boost to improve AI assisted coding?',
+            ));
+        }
+    }
+
+    /**
+     * Display the Laravel header with gradient colors.
+     *
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return void
+     */
+    protected function displayHeader(OutputInterface $output): void
+    {
+        $output->writeln('');
+
+        $lines = [
+            ' ██╗       █████╗  ██████╗   █████╗  ██╗   ██╗ ███████╗ ██╗',
+            ' ██║      ██╔══██╗ ██╔══██╗ ██╔══██╗ ██║   ██║ ██╔════╝ ██║',
+            ' ██║      ███████║ ██████╔╝ ███████║ ██║   ██║ █████╗   ██║',
+            ' ██║      ██╔══██║ ██╔══██╗ ██╔══██║ ╚██╗ ██╔╝ ██╔══╝   ██║',
+            ' ███████╗ ██║  ██║ ██║  ██║ ██║  ██║  ╚████╔╝  ███████╗ ███████╗',
+            ' ╚══════╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝   ╚═══╝   ╚══════╝ ╚══════╝',
+        ];
+
+        $gradients = [
+            'Red' => [196, 160, 124, 88, 52, 88],
+            'Gray' => [250, 248, 245, 243, 240, 238],
+            'Ocean' => [81, 75, 69, 63, 57, 21],
+            'Vaporwave' => [213, 177, 141, 105, 69, 39],
+            'Sunset' => [214, 208, 202, 196, 160, 124],
+            'Aurora' => [51, 50, 49, 48, 47, 41],
+            'Ember' => [227, 221, 215, 209, 203, 197],
+            'Cyberpunk' => [201, 165, 129, 93, 57, 21],
+        ];
+
+        $themeName = array_rand($gradients);
+        $gradient = $gradients[$themeName];
+
+        foreach ($lines as $index => $line) {
+            $color = $gradient[$index];
+            $output->writeln("\e[38;5;{$color}m{$line}\e[0m");
+        }
     }
 
     /**
@@ -184,6 +255,194 @@ class NewCommand extends Command
     }
 
     /**
+     * Check for newer version of the installer package.
+     *
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return void
+     */
+    protected function checkForUpdate(InputInterface $input, OutputInterface $output)
+    {
+        $package = 'laravel/installer';
+        $version = $this->getApplication()->getVersion();
+        $versionData = $this->getLatestVersionData($package);
+
+        if ($versionData === false) {
+            return;
+        }
+
+        $data = json_decode($versionData, true);
+        $latestVersion = ltrim($data['packages'][$package][0]['version'], 'v');
+
+        if (version_compare($version, $latestVersion) !== -1) {
+            return;
+        }
+
+        $output->writeln('');
+        $output->writeln("  <bg=yellow;fg=black> WARN </> A new version of the Laravel installer is available. You have version {$version} installed, the latest version is {$latestVersion}.");
+
+        $laravelInstallerPath = (new ExecutableFinder())->find('laravel') ?? '';
+        $isHerd = str_contains($laravelInstallerPath, DIRECTORY_SEPARATOR.'Herd'.DIRECTORY_SEPARATOR);
+        // Intalled via php.new
+        $isHerdLite = str_contains($laravelInstallerPath, DIRECTORY_SEPARATOR.'herd-lite'.DIRECTORY_SEPARATOR);
+
+        if ($isHerd) {
+            $this->confirmUpdateAndContinue(
+                'To update, open <options=bold>Herd</> > <options=bold>Settings</> > <options=bold>PHP</> > <options=bold>Laravel Installer</> '
+                    .'and click the <options=bold>"Update"</> button.',
+                $input,
+                $output
+            );
+
+            return;
+        }
+
+        if ($isHerdLite) {
+            $message = match (PHP_OS_FAMILY) {
+                'Windows' => 'Set-ExecutionPolicy Bypass -Scope Process -Force; '
+                    .'[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; '
+                    ."iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows'))",
+                'Darwin' => '/bin/bash -c "$(curl -fsSL https://php.new/install/mac)"',
+                default => '/bin/bash -c "$(curl -fsSL https://php.new/install/linux)"',
+            };
+
+            $output->writeln('');
+            $output->writeln('  To update, run the following command in your terminal:');
+
+            $this->confirmUpdateAndContinue($message, $input, $output);
+
+            return;
+        }
+
+        if (confirm(label: 'Would you like to update now?')) {
+            $this->runCommands(['composer global update laravel/installer'], $input, $output);
+            $this->proxyLaravelNew($input, $output);
+        }
+    }
+
+    /**
+     * Allow the user to update the Laravel Installer and continue.
+     *
+     * @param  string  $message
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return void
+     */
+    protected function confirmUpdateAndContinue(string $message, InputInterface $input, OutputInterface $output): void
+    {
+        $output->writeln('');
+        $output->writeln("  {$message}");
+
+        $updated = confirm(
+            label: 'Would you like to update now?',
+            yes: 'I have updated',
+            no: 'Not now',
+        );
+
+        if (! $updated) {
+            return;
+        }
+
+        $this->proxyLaravelNew($input, $output);
+    }
+
+    /**
+     * Proxy the command to the globally installed Laravel Installer.
+     *
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return void
+     */
+    protected function proxyLaravelNew(InputInterface $input, OutputInterface $output): void
+    {
+        $output->writeln('');
+        $this->runCommands(['laravel '.$input], $input, $output, workingPath: getcwd());
+        exit;
+    }
+
+    /**
+     * Get the latest version of the installer package from Packagist.
+     *
+     * @param  string  $package
+     * @return string|false
+     */
+    protected function getLatestVersionData(string $package): string|false
+    {
+        $packagePrefix = str_replace('/', '-', $package);
+        $cachedPath = join_paths(sys_get_temp_dir(), $packagePrefix.'-version-check.json');
+        $lastModifiedPath = join_paths(sys_get_temp_dir(), $packagePrefix.'-last-modified');
+
+        $cacheExists = file_exists($cachedPath);
+        $lastModifiedExists = file_exists($lastModifiedPath);
+
+        $cacheLastWrittenAt = $cacheExists ? filemtime($cachedPath) : 0;
+        $lastModifiedResponse = $lastModifiedExists ? file_get_contents($lastModifiedPath) : null;
+
+        if ($cacheLastWrittenAt > time() - 86400) {
+            // Cache is less than 24 hours old, use it
+            return file_get_contents($cachedPath);
+        }
+
+        $curl = curl_init();
+
+        $headers = ['User-Agent: Laravel Installer'];
+
+        if ($lastModifiedResponse) {
+            $headers[] = "If-Modified-Since: {$lastModifiedResponse}";
+        }
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => "https://repo.packagist.org/p2/{$package}.json",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 3,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+
+        try {
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $headerSize = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+            $error = curl_error($curl);
+
+            unset($curl);
+        } catch (Throwable $e) {
+            return false;
+        }
+
+        if ($error) {
+            return false;
+        }
+
+        $responseHeaders = substr($response, 0, $headerSize);
+        $result = substr($response, $headerSize);
+
+        $lastModifiedFromResponse = null;
+
+        if (preg_match('/^Last-Modified:\s*(.+)$/mi', $responseHeaders, $matches)) {
+            $lastModifiedFromResponse = trim($matches[1]);
+        }
+
+        file_put_contents($lastModifiedPath, $lastModifiedFromResponse);
+
+        if ($httpCode === 304 && $cacheExists) {
+            touch($cachedPath);
+
+            return file_get_contents($cachedPath);
+        }
+
+        if ($httpCode === 200 && $result !== false) {
+            file_put_contents($cachedPath, $result);
+
+            return $result;
+        }
+
+        return ($cacheExists) ? file_get_contents($cachedPath) : false;
+    }
+
+    /**
      * Execute the command.
      *
      * @param  \Symfony\Component\Console\Input\InputInterface  $input
@@ -192,11 +451,13 @@ class NewCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->pingNewInstallUrl();
+
         $this->validateDevAndTargetOptions($input);
         $this->validateDatabaseOption($input);
         $this->validateStackOption($input);
 
-        $name = mb_rtrim($input->getArgument('name'), '/\\');
+        $name = rtrim($input->getArgument('name'), '/\\');
 
         $directory = $this->getInstallationDirectory($name);
 
@@ -215,8 +476,28 @@ class NewCommand extends Command
         $composer = $this->findComposer();
         $phpBinary = $this->phpBinary();
 
+        $createProjectCommand = $composer." create-project laravel/laravel \"$directory\" $version --remove-vcs --prefer-dist --no-scripts";
+
+        $starterKit = $this->getStarterKit($input);
+
+        if ($starterKit) {
+            $createProjectCommand = $composer." create-project {$starterKit} \"{$directory}\" --stability=dev";
+
+            if ($this->usingLaravelStarterKit($input) && $input->getOption('livewire-class-components')) {
+                $createProjectCommand = str_replace(" {$starterKit} ", " {$starterKit}:dev-components ", $createProjectCommand);
+            }
+
+            if ($this->usingLaravelStarterKit($input) && $input->getOption('workos')) {
+                $createProjectCommand = str_replace(" {$starterKit} ", " {$starterKit}:dev-workos ", $createProjectCommand);
+            }
+
+            if (! $this->usingLaravelStarterKit($input) && str_contains($starterKit, '://')) {
+                $createProjectCommand = 'npx tiged@latest '.$starterKit.' "'.$directory.'" && cd "'.$directory.'" && composer install';
+            }
+        }
+
         $commands = [
-            $composer." create-project laravel/laravel \"$directory\" $version --remove-vcs --prefer-dist --no-scripts",
+            $createProjectCommand,
             $composer." run post-root-package-install -d \"$directory\"",
             $phpBinary." \"$directory/artisan\" key:generate --ansi",
         ];
@@ -237,7 +518,7 @@ class NewCommand extends Command
             if ($name !== '.') {
                 $this->replaceInFile(
                     'APP_URL=http://localhost',
-                    'APP_URL='.$this->generateAppUrl($name),
+                    'APP_URL='.$this->generateAppUrl($name, $directory),
                     $directory.'/.env'
                 );
 
@@ -265,12 +546,12 @@ class NewCommand extends Command
                 $this->createRepository($directory, $input, $output);
             }
 
-            if ($input->getOption('breeze')) {
-                $this->installBreeze($directory, $input, $output);
-            } elseif ($input->getOption('jet')) {
-                $this->installJetstream($directory, $input, $output);
-            } elseif ($input->getOption('pest')) {
+            if ($input->getOption('pest')) {
                 $this->installPest($directory, $input, $output);
+            }
+
+            if ($input->getOption('boost')) {
+                $this->installBoost($directory, $input, $output);
             }
 
             if ($input->getOption('github') !== false) {
@@ -278,25 +559,120 @@ class NewCommand extends Command
                 $output->writeln('');
             }
 
-            $this->configureComposerDevScript($directory);
+            [$packageManager, $runPackageManager] = $this->determinePackageManager($directory, $input);
+
+            $this->configureComposerScripts($packageManager);
+
+            if ($input->getOption('pest')) {
+                $output->writeln('');
+            }
+
+            if (! $runPackageManager && $input->isInteractive()) {
+                $runPackageManager = confirm(
+                    label: 'Would you like to run <options=bold>'.$packageManager->installCommand().'</> and <options=bold>'.$packageManager->buildCommand().'</>?'
+                );
+            }
+
+            foreach (NodePackageManager::allLockFiles() as $lockFile) {
+                if (! in_array($lockFile, $packageManager->lockFiles()) && file_exists($directory.'/'.$lockFile)) {
+                    (new Filesystem())->delete($directory.'/'.$lockFile);
+                }
+            }
+
+            if ($runPackageManager) {
+                $this->runCommands([$packageManager->installCommand(), $packageManager->buildCommand()], $input, $output, workingPath: $directory);
+            }
+
+            if ($input->getOption('boost')) {
+                $this->configureBoostComposerScript();
+                $this->commitChanges('Configure Boost post-update script', $directory, $input, $output);
+            }
 
             $output->writeln("  <bg=blue;fg=white> INFO </> Application ready in <options=bold>[{$name}]</>. You can start your local development using:".PHP_EOL);
             $output->writeln('<fg=gray>➜</> <options=bold>cd '.$name.'</>');
-            $output->writeln('<fg=gray>➜</> <options=bold>npm install && npm run build</>');
+
+            if (! $runPackageManager) {
+                $output->writeln('<fg=gray>➜</> <options=bold>'.$packageManager->installCommand().' && '.$packageManager->buildCommand().'</>');
+            }
 
             if ($this->isParkedOnHerdOrValet($directory)) {
-                $url = $this->generateAppUrl($name);
+                $url = $this->generateAppUrl($name, $directory);
                 $output->writeln('<fg=gray>➜</> Open: <options=bold;href='.$url.'>'.$url.'</>');
             } else {
                 $output->writeln('<fg=gray>➜</> <options=bold>composer run dev</>');
             }
 
             $output->writeln('');
-            $output->writeln('  New to Laravel? Check out our <href=https://bootcamp.laravel.com>bootcamp</> and <href=https://laravel.com/docs/installation#next-steps>documentation</>. <options=bold>Build something amazing!</>');
+            $output->writeln('  New to Laravel? Check out our <href=https://laravel.com/docs/installation#next-steps>documentation</>. <options=bold>Build something amazing!</>');
             $output->writeln('');
         }
 
         return $process->getExitCode();
+    }
+
+    /**
+     * Ping the new install URL.
+     *
+     * @return void
+     */
+    protected function pingNewInstallUrl(): void
+    {
+        $curl = curl_init();
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => 'https://laravel.com/new-install',
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['User-Agent: Laravel Installer'],
+            CURLOPT_TIMEOUT => 3,
+        ]);
+
+        try {
+            curl_exec($curl);
+        } catch (Throwable $e) {
+            //
+        }
+    }
+
+    /**
+     * Determine the Node package manager to use.
+     *
+     * @param  string  $directory
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @return array{NodePackageManager, bool}
+     */
+    protected function determinePackageManager(string $directory, InputInterface $input): array
+    {
+        // If they passed a specific flag, respect the user's choice...
+        if ($input->getOption('pnpm')) {
+            return [NodePackageManager::PNPM, true];
+        }
+
+        if ($input->getOption('bun')) {
+            return [NodePackageManager::BUN, true];
+        }
+
+        if ($input->getOption('yarn')) {
+            return [NodePackageManager::YARN, true];
+        }
+
+        if ($input->getOption('npm')) {
+            return [NodePackageManager::NPM, true];
+        }
+
+        // Check for an existing lock file to determine the package manager...
+        foreach (NodePackageManager::cases() as $packageManager) {
+            if ($packageManager === NodePackageManager::NPM) {
+                continue;
+            }
+
+            foreach ($packageManager->lockFiles() as $lockFile) {
+                if (file_exists($directory.'/'.$lockFile)) {
+                    return [$packageManager, false];
+                }
+            }
+        }
+
+        return [NodePackageManager::NPM, false];
     }
 
     /**
@@ -444,63 +820,6 @@ class NewCommand extends Command
     }
 
     /**
-     * Install Laravel Breeze into the application.
-     *
-     * @param  string  $directory
-     * @param  \Symfony\Component\Console\Input\InputInterface  $input
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
-     * @return void
-     */
-    protected function installBreeze(string $directory, InputInterface $input, OutputInterface $output)
-    {
-        $commands = array_filter([
-            $this->findComposer().' require laravel/breeze --dev',
-            trim(sprintf(
-                $this->phpBinary().' artisan breeze:install %s %s %s %s %s %s',
-                $input->getOption('stack'),
-                $input->getOption('typescript') ? '--typescript' : '',
-                $input->getOption('pest') ? '--pest' : '',
-                $input->getOption('dark') ? '--dark' : '',
-                $input->getOption('ssr') ? '--ssr' : '',
-                $input->getOption('eslint') ? '--eslint' : '',
-            )),
-        ]);
-
-        $this->runCommands($commands, $input, $output, workingPath: $directory);
-
-        $this->commitChanges('Install Breeze', $directory, $input, $output);
-    }
-
-    /**
-     * Install Laravel Jetstream into the application.
-     *
-     * @param  string  $directory
-     * @param  \Symfony\Component\Console\Input\InputInterface  $input
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
-     * @return void
-     */
-    protected function installJetstream(string $directory, InputInterface $input, OutputInterface $output)
-    {
-        $commands = array_filter([
-            $this->findComposer().' require laravel/jetstream',
-            trim(sprintf(
-                $this->phpBinary().' artisan jetstream:install %s %s %s %s %s %s %s',
-                $input->getOption('stack'),
-                $input->getOption('api') ? '--api' : '',
-                $input->getOption('dark') ? '--dark' : '',
-                $input->getOption('teams') ? '--teams' : '',
-                $input->getOption('pest') ? '--pest' : '',
-                $input->getOption('verification') ? '--verification' : '',
-                $input->getOption('ssr') ? '--ssr' : '',
-            )),
-        ]);
-
-        $this->runCommands($commands, $input, $output, workingPath: $directory);
-
-        $this->commitChanges('Install Jetstream', $directory, $input, $output);
-    }
-
-    /**
      * Determine the default database connection.
      *
      * @param  string  $directory
@@ -513,6 +832,13 @@ class NewCommand extends Command
             $databaseOptions = $this->databaseOptions()
         )->keys()->first();
 
+        if (! $input->getOption('database') && $this->usingStarterKit($input)) {
+            // Starter kits will already be migrated in post composer create-project command...
+            $migrate = false;
+
+            $input->setOption('database', 'sqlite');
+        }
+
         if (! $input->getOption('database') && $input->isInteractive()) {
             $input->setOption('database', select(
                 label: 'Which database will your application use?',
@@ -520,12 +846,13 @@ class NewCommand extends Command
                 default: $defaultDatabase,
             ));
 
-            $migrate = confirm(
-                label: $input->getOption('database') !== 'sqlite'
-                    ? 'Default database updated. Would you like to run the default database migrations?'
-                    : 'Would you like to run the default database migrations?',
-                default: true
-            );
+            if ($input->getOption('database') !== 'sqlite') {
+                $migrate = confirm(
+                    label: 'Default database updated. Would you like to run the default database migrations?'
+                );
+            } else {
+                $migrate = true;
+            }
         }
 
         return [$input->getOption('database') ?? $defaultDatabase, $migrate ?? $input->hasOption('database')];
@@ -654,36 +981,12 @@ class NewCommand extends Command
     /**
      * Validate the database driver input.
      *
-     * @param  \Symfony\Components\Console\Input\InputInterface
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
      */
     protected function validateDatabaseOption(InputInterface $input)
     {
-        if ($input->getOption('database') && ! in_array($input->getOption('database'), $drivers = ['mysql', 'mariadb', 'pgsql', 'sqlite', 'sqlsrv'])) {
-            throw new \InvalidArgumentException("Invalid database driver [{$input->getOption('database')}]. Valid options are: ".implode(', ', $drivers).'.');
-        }
-    }
-
-    /**
-     * Validate the starter kit stack input.
-     *
-     * @param  \Symfony\Components\Console\Input\InputInterface
-     */
-    protected function validateStackOption(InputInterface $input)
-    {
-        if ($input->getOption('breeze')) {
-            if (! in_array($input->getOption('stack'), $stacks = ['blade', 'livewire', 'livewire-functional', 'react', 'vue', 'api'])) {
-                throw new \InvalidArgumentException("Invalid Breeze stack [{$input->getOption('stack')}]. Valid options are: ".implode(', ', $stacks).'.');
-            }
-
-            return;
-        }
-
-        if ($input->getOption('jet')) {
-            if (! in_array($input->getOption('stack'), $stacks = ['inertia', 'livewire'])) {
-                throw new \InvalidArgumentException("Invalid Jetstream stack [{$input->getOption('stack')}]. Valid options are: ".implode(', ', $stacks).'.');
-            }
-
-            return;
+        if ($input->getOption('database') && ! in_array($input->getOption('database'), self::DATABASE_DRIVERS)) {
+            throw new \InvalidArgumentException("Invalid database driver [{$input->getOption('database')}]. Possible values are: ".implode(', ', self::DATABASE_DRIVERS).'.');
         }
     }
 
@@ -705,21 +1008,73 @@ class NewCommand extends Command
             $this->phpBinary().' ./vendor/bin/pest --init',
         ];
 
+        $commands[] = $composerBinary.' require pestphp/pest-plugin-drift --dev';
+        $commands[] = $this->phpBinary().' ./vendor/bin/pest --drift';
+        $commands[] = $composerBinary.' remove pestphp/pest-plugin-drift --dev';
+
         $this->runCommands($commands, $input, $output, workingPath: $directory, env: [
             'PEST_NO_SUPPORT' => 'true',
         ]);
 
-        $this->replaceFile(
-            'pest/Feature.php',
-            $directory.'/tests/Feature/ExampleTest.php',
-        );
+        if ($this->usingStarterKit($input)) {
+            $this->replaceInFile(
+                './vendor/bin/phpunit',
+                './vendor/bin/pest',
+                $directory.'/.github/workflows/tests.yml',
+            );
 
-        $this->replaceFile(
-            'pest/Unit.php',
-            $directory.'/tests/Unit/ExampleTest.php',
-        );
+            $contents = file_get_contents("$directory/tests/Pest.php");
+
+            $contents = str_replace(
+                " // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)",
+                "    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)",
+                $contents,
+            );
+
+            file_put_contents("$directory/tests/Pest.php", $contents);
+
+            $directoryIterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("$directory/tests"));
+
+            foreach ($directoryIterator as $testFile) {
+                if ($testFile->isDir()) {
+                    continue;
+                }
+
+                $contents = file_get_contents($testFile);
+
+                file_put_contents(
+                    $testFile,
+                    str_replace("\n\nuses(\Illuminate\Foundation\Testing\RefreshDatabase::class);", '', $contents),
+                );
+            }
+        }
 
         $this->commitChanges('Install Pest', $directory, $input, $output);
+    }
+
+    /**
+     * Install Laravel Boost into the application.
+     *
+     * @param  string  $directory
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return void
+     */
+    protected function installBoost(string $directory, InputInterface $input, OutputInterface $output): void
+    {
+        $composerBinary = $this->findComposer();
+
+        $commands = [
+            $composerBinary.' require laravel/boost ^2.0 --dev -W',
+            trim(sprintf(
+                $this->phpBinary().' artisan boost:install %s',
+                ! $input->isInteractive() ? '--no-interaction' : '',
+            )),
+        ];
+
+        $this->runCommands($commands, $input, $output, workingPath: $directory);
+
+        $this->commitChanges('Install Laravel Boost', $directory, $input, $output);
     }
 
     /**
@@ -798,20 +1153,44 @@ class NewCommand extends Command
     }
 
     /**
-     * Configure the Composer "dev" script.
+     * Configure the Composer scripts for the selected package manager.
      *
-     * @param  string  $directory
+     * @param  NodePackageManager  $packageManager
      * @return void
      */
-    protected function configureComposerDevScript(string $directory): void
+    protected function configureComposerScripts(NodePackageManager $packageManager): void
     {
-        $this->composer->modify(function (array $content) {
+        $this->composer->modify(function (array $content) use ($packageManager) {
             if (windows_os()) {
                 $content['scripts']['dev'] = [
                     'Composer\\Config::disableProcessTimeout',
                     "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"npm run dev\" --names='server,queue,vite'",
                 ];
             }
+
+            foreach (['dev', 'dev:ssr', 'setup'] as $scriptKey) {
+                if (array_key_exists($scriptKey, $content['scripts'])) {
+                    $content['scripts'][$scriptKey] = str_replace(
+                        ['npm', 'npx', 'ppnpm'],
+                        [$packageManager->value, $packageManager->runLocalOrRemoteCommand(), 'pnpm'],
+                        $content['scripts'][$scriptKey],
+                    );
+                }
+            }
+
+            return $content;
+        });
+    }
+
+    /**
+     * Add boost:update command to the post-update-cmd Composer script.
+     *
+     * @return void
+     */
+    protected function configureBoostComposerScript(): void
+    {
+        $this->composer->modify(function (array $content) {
+            $content['scripts']['post-update-cmd'][] = '@php artisan boost:update --ansi';
 
             return $content;
         });
@@ -834,13 +1213,68 @@ class NewCommand extends Command
      * Generate a valid APP_URL for the given application name.
      *
      * @param  string  $name
+     * @param  string  $directory
      * @return string
      */
-    protected function generateAppUrl($name)
+    protected function generateAppUrl($name, $directory)
     {
+        if (! $this->isParkedOnHerdOrValet($directory)) {
+            return 'http://localhost:8000';
+        }
+
         $hostname = mb_strtolower($name).'.'.$this->getTld();
 
         return $this->canResolveHostname($hostname) ? 'http://'.$hostname : 'http://localhost';
+    }
+
+    /**
+     * Get the starter kit repository, if any.
+     *
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @return string|null
+     */
+    protected function getStarterKit(InputInterface $input): ?string
+    {
+        if ($input->getOption('no-authentication')) {
+            return match (true) {
+                $input->getOption('react') => 'laravel/blank-react-starter-kit',
+                $input->getOption('svelte') => 'laravel/blank-svelte-starter-kit',
+                $input->getOption('vue') => 'laravel/blank-vue-starter-kit',
+                $input->getOption('livewire') => 'laravel/blank-livewire-starter-kit',
+                default => $input->getOption('using'),
+            };
+        }
+
+        return match (true) {
+            $input->getOption('react') => 'laravel/react-starter-kit',
+            $input->getOption('svelte') => 'laravel/svelte-starter-kit',
+            $input->getOption('vue') => 'laravel/vue-starter-kit',
+            $input->getOption('livewire') => 'laravel/livewire-starter-kit',
+            default => $input->getOption('using'),
+        };
+    }
+
+    /**
+     * Determine if a Laravel first-party starter kit has been chosen.
+     *
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @return bool
+     */
+    protected function usingLaravelStarterKit(InputInterface $input): bool
+    {
+        return $this->usingStarterKit($input) &&
+               str_starts_with($this->getStarterKit($input), 'laravel/');
+    }
+
+    /**
+     * Determine if a starter kit is being used.
+     *
+     * @param  \Symfony\Component\Console\Input\InputInterface  $input
+     * @return bool
+     */
+    protected function usingStarterKit(InputInterface $input)
+    {
+        return $input->getOption('react') || $input->getOption('svelte') || $input->getOption('vue') || $input->getOption('livewire') || $input->getOption('using');
     }
 
     /**
@@ -934,11 +1368,7 @@ class NewCommand extends Command
     {
         if (! $output->isDecorated()) {
             $commands = array_map(function ($value) {
-                if (str_starts_with($value, 'chmod')) {
-                    return $value;
-                }
-
-                if (str_starts_with($value, 'git')) {
+                if (Str::startsWith($value, ['chmod', 'rm', 'git', $this->phpBinary().' ./vendor/bin/pest'])) {
                     return $value;
                 }
 
@@ -948,11 +1378,7 @@ class NewCommand extends Command
 
         if ($input->getOption('quiet')) {
             $commands = array_map(function ($value) {
-                if (str_starts_with($value, 'chmod')) {
-                    return $value;
-                }
-
-                if (str_starts_with($value, 'git')) {
+                if (Str::startsWith($value, ['chmod', 'rm', 'git', $this->phpBinary().' ./vendor/bin/pest'])) {
                     return $value;
                 }
 
@@ -962,7 +1388,7 @@ class NewCommand extends Command
 
         $process = Process::fromShellCommandline(implode(' && ', $commands), $workingPath, $env, null, null);
 
-        if ('\\' !== DIRECTORY_SEPARATOR && file_exists('/dev/tty') && is_readable('/dev/tty')) {
+        if (Process::isTtySupported()) {
             try {
                 $process->setTty(true);
             } catch (RuntimeException $e) {
@@ -1024,5 +1450,16 @@ class NewCommand extends Command
             $file,
             preg_replace($pattern, $replace, file_get_contents($file))
         );
+    }
+
+    /**
+     * Delete the given file.
+     *
+     * @param  string  $file
+     * @return void
+     */
+    protected function deleteFile(string $file)
+    {
+        unlink($file);
     }
 }
